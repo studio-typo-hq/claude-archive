@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archive — Claude conversations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..600&family=Archivo:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: oklch(96.5% 0.013 90);
+    --paper-deep: oklch(93.8% 0.017 88);
+    --paper-well: oklch(91.5% 0.02 87);
+    --ink: oklch(26% 0.022 65);
+    --ink-soft: oklch(42% 0.022 65);
+    --faint: oklch(58% 0.02 70);
+    --rust: oklch(46% 0.145 35);
+    --rust-soft: oklch(46% 0.145 35 / .12);
+    --rule: oklch(26% 0.022 65 / .14);
+    --rule-faint: oklch(26% 0.022 65 / .08);
+    --serif: "Instrument Serif", Georgia, serif;
+    --body: "Newsreader", Georgia, serif;
+    --sans: "Archivo", -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app { display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+
+  /* ---------- sidebar ---------- */
+  aside {
+    background: var(--paper-deep);
+    border-right: 1px solid var(--rule);
+    overflow-y: auto;
+    padding: 0 0 3rem;
+  }
+  .wordmark {
+    padding: 1.6rem 1.4rem 1.3rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .wordmark h1 {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 1.7rem;
+    margin: 0;
+    letter-spacing: .01em;
+  }
+  .wordmark .sub {
+    margin-top: .35rem;
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    color: var(--faint);
+  }
+  .tree { padding: .9rem .6rem; }
+  .node-row {
+    display: flex; align-items: center; gap: .45rem;
+    width: 100%;
+    padding: .34rem .55rem;
+    border: 0; background: none; font: inherit; color: var(--ink-soft);
+    font-size: .82rem; font-weight: 500;
+    cursor: pointer; text-align: left;
+    border-radius: 3px;
+  }
+  .node-row:hover { background: var(--paper-well); color: var(--ink); }
+  .node-row.active { background: var(--rust-soft); color: var(--rust); }
+  .node-row .tri {
+    width: .7rem; flex: none; font-size: .6rem; color: var(--faint);
+    transition: transform .25s cubic-bezier(.22,1,.36,1);
+    transform: rotate(0deg);
+  }
+  .node-row .tri.open { transform: rotate(90deg); }
+  .node-row .tri.leafdot { font-size: .8rem; line-height: 0; }
+  .node-row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node-row .count {
+    font-size: .68rem; color: var(--faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .node-row.active .count { color: var(--rust); }
+  .children { margin-left: .85rem; border-left: 1px solid var(--rule-faint); padding-left: .25rem; }
+  .children.hidden { display: none; }
+
+  /* ---------- main ---------- */
+  main { overflow-y: auto; position: relative; }
+  .topbar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: baseline; gap: 1.5rem;
+    padding: 1.45rem clamp(1.5rem, 4vw, 3.5rem) 1.05rem;
+    background: oklch(96.5% 0.013 90 / .92);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--rule);
+  }
+  .topbar .where {
+    font-family: var(--serif); font-size: 1.45rem; font-weight: 400;
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .topbar .where em { color: var(--rust); font-style: italic; }
+  .searchwrap { position: relative; }
+  input[type="search"] {
+    font: inherit; font-size: .82rem;
+    color: var(--ink);
+    background: none;
+    border: 0; border-bottom: 1px solid var(--rule);
+    padding: .3rem 0 .3rem 0;
+    width: 230px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  input[type="search"]::placeholder { color: var(--faint); }
+  input[type="search"]:focus { border-bottom-color: var(--rust); }
+
+  .list { padding: .6rem clamp(1.5rem, 4vw, 3.5rem) 5rem; }
+  .month {
+    margin: 2.2rem 0 .4rem;
+    font-size: .68rem; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--faint);
+    display: flex; align-items: center; gap: .9rem;
+  }
+  .month::after { content: ""; flex: 1; height: 1px; background: var(--rule-faint); }
+
+  .row {
+    display: grid;
+    grid-template-columns: 4.2rem 1fr auto;
+    gap: 1.4rem;
+    padding: 1.05rem .8rem 1.1rem .4rem;
+    border-bottom: 1px solid var(--rule-faint);
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(10px);
+    animation: rise .55s cubic-bezier(.22,1,.36,1) forwards;
+    animation-delay: var(--d, 0s);
+  }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  .row:hover { background: var(--paper-deep); }
+  .row .when { padding-top: .25rem; }
+  .row .when .day {
+    font-family: var(--serif); font-size: 1.5rem; line-height: 1;
+    color: var(--ink-soft);
+  }
+  .row .when .mon {
+    font-size: .64rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--faint); margin-top: .25rem;
+  }
+  .row h3 {
+    margin: 0;
+    font-family: var(--serif); font-weight: 400;
+    font-size: 1.42rem; line-height: 1.18;
+    transition: color .15s;
+  }
+  .row:hover h3 { color: var(--rust); }
+  .row .snippet {
+    margin-top: .4rem;
+    font-family: var(--body);
+    font-size: .95rem; line-height: 1.45;
+    color: var(--ink-soft);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .row .proj {
+    margin-top: .55rem;
+    font-size: .68rem; letter-spacing: .08em; color: var(--faint);
+  }
+  .row .meta {
+    padding-top: .35rem; text-align: right;
+    font-size: .7rem; color: var(--faint);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .empty {
+    margin: 5rem auto; max-width: 26rem; text-align: center;
+    font-family: var(--body); font-size: 1.05rem; color: var(--faint);
+  }
+  .empty .big { font-family: var(--serif); font-style: italic; font-size: 1.6rem; color: var(--ink-soft); }
+
+  /* ---------- detail ---------- */
+  .detail { padding: 0 clamp(1.5rem, 4vw, 3.5rem) 6rem; animation: fade .4s ease-out; }
+  @keyframes fade { from { opacity: 0; } }
+  .backbar {
+    position: sticky; top: 0; z-index: 5;
+    padding: 1.1rem 0 .9rem;
+    background: oklch(96.5% 0.013 90 / .92);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 2.2rem;
+  }
+  .backbar button {
+    font: inherit; font-size: .75rem; letter-spacing: .12em; text-transform: uppercase;
+    border: 0; background: none; color: var(--rust); cursor: pointer; padding: 0;
+  }
+  .backbar button:hover { text-decoration: underline; }
+  .detail header.convo { max-width: 46rem; margin-bottom: 3rem; }
+  .detail h2 {
+    font-family: var(--serif); font-weight: 400;
+    font-size: clamp(1.9rem, 3.4vw, 2.6rem); line-height: 1.12;
+    margin: 0 0 .8rem;
+  }
+  .detail .convo-meta {
+    font-size: .7rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--faint); display: flex; gap: 1.4rem; flex-wrap: wrap;
+  }
+
+  .msg { max-width: 46rem; margin-bottom: 2.4rem; display: grid; grid-template-columns: 4.2rem 1fr; gap: 1.2rem; }
+  .msg .who {
+    font-size: .64rem; letter-spacing: .16em; text-transform: uppercase;
+    padding-top: .45rem; color: var(--faint);
+  }
+  .msg.user .who { color: var(--rust); }
+  .msg .body { min-width: 0; }
+  .msg.user .body {
+    font-family: var(--body); font-size: 1.08rem; line-height: 1.5; font-weight: 500;
+    border-left: 2px solid var(--rust);
+    padding-left: 1rem;
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
+  .msg.assistant .body { font-family: var(--body); font-size: 1.02rem; line-height: 1.62; }
+  .msg.assistant .body > :first-child { margin-top: 0; }
+  .msg .body p { margin: .7em 0; overflow-wrap: break-word; }
+  .msg .body h1, .msg .body h2, .msg .body h3, .msg .body h4 {
+    font-family: var(--serif); font-weight: 400; margin: 1.2em 0 .4em; line-height: 1.2;
+  }
+  .msg .body h1 { font-size: 1.5em; } .msg .body h2 { font-size: 1.32em; } .msg .body h3 { font-size: 1.18em; }
+  .msg .body ul, .msg .body ol { padding-left: 1.3em; margin: .6em 0; }
+  .msg .body li { margin: .25em 0; }
+  .msg .body a { color: var(--rust); }
+  .msg .body blockquote {
+    margin: .8em 0; padding-left: 1em;
+    border-left: 2px solid var(--rule); color: var(--ink-soft); font-style: italic;
+  }
+  .msg .body code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: .82em;
+    background: var(--paper-well);
+    padding: .1em .35em; border-radius: 3px;
+  }
+  .msg .body pre {
+    background: var(--paper-well);
+    border: 1px solid var(--rule-faint);
+    padding: .9em 1.1em; border-radius: 4px;
+    overflow-x: auto; line-height: 1.5;
+  }
+  .msg .body pre code { background: none; padding: 0; }
+  .msg .body table { border-collapse: collapse; margin: .8em 0; font-size: .92em; }
+  .msg .body td, .msg .body th { border: 1px solid var(--rule); padding: .35em .7em; text-align: left; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; }
+  .chip {
+    display: inline-flex; align-items: baseline; gap: .45rem;
+    font-family: var(--sans); font-size: .7rem;
+    border: 1px solid var(--rule); border-radius: 999px;
+    padding: .22rem .7rem;
+    color: var(--ink-soft);
+    max-width: 100%;
+  }
+  .chip b { font-weight: 600; color: var(--ink); }
+  .chip span {
+    font-family: ui-monospace, Menlo, monospace; font-size: .66rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--faint);
+  }
+  .chip.cmd { border-color: var(--rust); color: var(--rust); }
+  .chip.intr { border-style: dashed; color: var(--faint); font-style: italic; }
+
+  .loading {
+    margin: 6rem auto; text-align: center;
+    font-family: var(--serif); font-style: italic; font-size: 1.3rem; color: var(--faint);
+  }
+
+  /* ---------- almanac ---------- */
+  .almanac-link {
+    display: block; margin: .9rem 1.4rem 0; padding: .5rem .8rem;
+    border: 1px solid var(--rust); border-radius: 3px;
+    font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--rust); background: none; cursor: pointer; font-family: var(--sans);
+    width: calc(100% - 2.8rem); text-align: center;
+  }
+  .almanac-link:hover { background: var(--rust); color: var(--paper); }
+
+  .almanac { max-width: 64rem; margin: 0 auto; padding: 3rem clamp(1.5rem,4vw,3rem) 8rem; }
+  .almanac section { margin-top: 4.5rem; opacity: 0; transform: translateY(16px);
+    animation: rise .7s cubic-bezier(.22,1,.36,1) forwards; animation-delay: var(--d,0s); }
+  .masthead { text-align: center; border-bottom: 3px double var(--ink); padding-bottom: 2rem; }
+  .masthead .over {
+    font-size: .7rem; letter-spacing: .35em; text-transform: uppercase; color: var(--faint);
+  }
+  .masthead h2 {
+    font-family: var(--serif); font-weight: 400; font-style: italic;
+    font-size: clamp(3.2rem, 8vw, 5.5rem); margin: .5rem 0 .3rem; line-height: 1;
+  }
+  .masthead .range { font-family: var(--body); font-style: italic; color: var(--ink-soft); }
+
+  .sec-title {
+    font-size: .72rem; letter-spacing: .3em; text-transform: uppercase; color: var(--rust);
+    display: flex; align-items: center; gap: 1rem; margin-bottom: 1.8rem;
+  }
+  .sec-title::before { content: "§"; font-family: var(--serif); font-size: 1.1rem; }
+  .sec-title::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+
+  .numwall { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0; }
+  .bignum { padding: 1.4rem 1.6rem; border-left: 1px solid var(--rule-faint); }
+  .bignum:first-child { border-left: 0; }
+  .bignum .n {
+    font-family: var(--serif); font-size: clamp(2.6rem, 5vw, 4rem); line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .bignum .l { margin-top: .5rem; font-size: .7rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--faint); }
+  .bignum .note { margin-top: .3rem; font-family: var(--body); font-style: italic;
+    font-size: .85rem; color: var(--ink-soft); }
+
+  .stamp {
+    display: inline-block; transform: rotate(-5deg);
+    border: 3px solid var(--rust); color: var(--rust); border-radius: 6px;
+    padding: .45rem 1.1rem; font-weight: 600; letter-spacing: .2em; text-transform: uppercase;
+    font-size: .85rem; opacity: .85; mix-blend-mode: multiply;
+  }
+
+  .confession { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: center; }
+  .confession .giant .n {
+    font-family: var(--serif); font-size: clamp(5rem, 11vw, 9rem); line-height: .95; color: var(--rust);
+  }
+  .confession .giant .quote {
+    font-family: var(--body); font-style: italic; font-size: 1.3rem; margin-top: .6rem;
+  }
+  .confession .giant .l { font-size: .72rem; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--faint); margin-top: .4rem; }
+  .ledger { font-family: var(--body); font-size: 1.02rem; }
+  .ledger .li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    padding: .55rem 0; border-bottom: 1px dotted var(--rule); }
+  .ledger .li b { font-variant-numeric: tabular-nums; font-family: var(--serif); font-size: 1.3rem; }
+
+  .clockgrid { display: grid; grid-template-columns: 2fr 1fr; gap: 3rem; }
+  .hours { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; align-items: end; height: 9rem; }
+  .hours .bar { background: var(--ink); opacity: .8; min-height: 2px; border-radius: 1px 1px 0 0;
+    transform-origin: bottom; animation: grow .8s cubic-bezier(.22,1,.36,1) backwards; }
+  @keyframes grow { from { transform: scaleY(0); } }
+  .hours .bar.hot { background: var(--rust); opacity: 1; }
+  .hourlabels { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px;
+    font-size: .58rem; color: var(--faint); margin-top: .35rem; text-align: center; }
+  .weekrow { display: flex; gap: .5rem; margin-top: 1.6rem; }
+  .weekrow .wd { flex: 1; text-align: center; font-size: .65rem; color: var(--faint); }
+  .weekrow .wd .pill { height: .55rem; border-radius: 999px; background: var(--rule);
+    margin-bottom: .35rem; overflow: hidden; }
+  .weekrow .wd .pill i { display: block; height: 100%; background: var(--rust); }
+
+  .bars { display: grid; gap: .55rem; }
+  .bars .brow { display: grid; grid-template-columns: 8.5rem 1fr 3.2rem; gap: .8rem;
+    align-items: center; font-size: .82rem; }
+  .bars .brow .bn { text-align: right; color: var(--ink-soft);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bars .brow .bt { height: .85rem; background: var(--rule-faint); border-radius: 2px; overflow: hidden; }
+  .bars .brow .bt i { display: block; height: 100%; background: var(--ink); opacity: .85;
+    transform-origin: left; animation: growx .8s cubic-bezier(.22,1,.36,1) backwards; }
+  @keyframes growx { from { transform: scaleX(0); } }
+  .bars .brow:first-child .bt i { background: var(--rust); opacity: 1; }
+  .bars .brow .bv { font-variant-numeric: tabular-nums; color: var(--faint); font-size: .75rem; }
+
+  .ticwall { display: flex; flex-wrap: wrap; gap: .7rem; align-items: baseline; }
+  .tic { font-family: var(--serif); border-bottom: 2px solid var(--rust); padding-bottom: .1rem; }
+  .tic small { font-family: var(--sans); color: var(--faint); font-size: .65rem; margin-left: .3rem; }
+
+  .pullquote {
+    font-family: var(--body); font-style: italic; font-size: 1.15rem; line-height: 1.6;
+    border-left: 2px solid var(--rust); padding-left: 1.2rem; color: var(--ink-soft);
+    margin: 1.2rem 0;
+  }
+  .footnote { margin-top: 5rem; padding-top: 1.2rem; border-top: 3px double var(--ink);
+    text-align: center; font-family: var(--body); font-style: italic; color: var(--faint); }
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; }
+  @media (max-width: 760px) {
+    .confession, .clockgrid, .twocol { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; }
+    aside { display: none; }
+    .row { grid-template-columns: 3rem 1fr; }
+    .row .meta { display: none; }
+    .msg { grid-template-columns: 1fr; gap: .3rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .row { animation: none; opacity: 1; transform: none; }
+    .detail { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="wordmark">
+      <h1>Archive</h1>
+      <div class="sub" id="stats">scanning…</div>
+    </div>
+    <button class="almanac-link" onclick="showAlmanac()">⁂ The Almanac</button>
+    <nav class="tree" id="tree"></nav>
+  </aside>
+  <main id="main">
+    <div class="loading">Reading the archive…</div>
+  </main>
+</div>
+
+<script>
+const $ = (s, el=document) => el.querySelector(s);
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const fmtDay = ts => { const d = new Date(ts); return { day: d.getDate(), mon: MONTHS[d.getMonth()], year: d.getFullYear() }; };
+const monthKey = ts => { const d = new Date(ts); return `${d.toLocaleString("en",{month:"long"})} ${d.getFullYear()}`; };
+
+let HOME = "";
+let ALL = [];          // flattened sessions, each with .dir and .path (segments)
+let TREE = null;       // nested {name, children:Map, count}
+let currentNode = null; // null = all
+let openPaths = new Set();
+
+function shortPath(cwd) {
+  if (!cwd) return "(unknown)";
+  return cwd.startsWith(HOME) ? "~" + cwd.slice(HOME.length) : cwd;
+}
+
+function buildTree() {
+  TREE = { name: "~", children: new Map(), count: 0, path: "" };
+  for (const s of ALL) {
+    const segs = shortPath(s.cwd).split("/").filter(Boolean);
+    let node = TREE;
+    node.count++;
+    let acc = "";
+    for (const seg of segs.slice(1)) {   // skip leading "~"
+      acc += "/" + seg;
+      if (!node.children.has(seg))
+        node.children.set(seg, { name: seg, children: new Map(), count: 0, path: acc });
+      node = node.children.get(seg);
+      node.count++;
+    }
+    (node.sessions ??= []).push(s);
+  }
+}
+
+function renderTree() {
+  const treeEl = $("#tree");
+  treeEl.innerHTML = "";
+  const mk = (node, depth) => {
+    const frag = document.createDocumentFragment();
+    const hasKids = node.children.size > 0;
+    const row = document.createElement("button");
+    row.className = "node-row" + (currentNode === node.path ? " active" : "");
+    const open = openPaths.has(node.path) || depth === 0;
+    row.innerHTML = `<span class="tri ${hasKids ? (open ? "open" : "") : "leafdot"}">${hasKids ? "▶" : "·"}</span>
+      <span class="name">${esc(node.name)}</span><span class="count">${node.count}</span>`;
+    row.onclick = () => {
+      if (hasKids) {
+        openPaths.has(node.path) ? openPaths.delete(node.path) : openPaths.add(node.path);
+      }
+      currentNode = node.path;
+      renderTree(); showList();
+    };
+    frag.appendChild(row);
+    if (hasKids) {
+      const box = document.createElement("div");
+      box.className = "children" + (open ? "" : " hidden");
+      [...node.children.values()]
+        .sort((a,b) => b.count - a.count || a.name.localeCompare(b.name))
+        .forEach(ch => box.appendChild(mk(ch, depth+1)));
+      frag.appendChild(box);
+    }
+    return frag;
+  };
+  // "all" pseudo-node
+  const all = document.createElement("button");
+  all.className = "node-row" + (currentNode === null ? " active" : "");
+  all.innerHTML = `<span class="tri leafdot">◆</span><span class="name">All conversations</span><span class="count">${ALL.length}</span>`;
+  all.onclick = () => { currentNode = null; renderTree(); showList(); };
+  treeEl.appendChild(all);
+  treeEl.appendChild(mk(TREE, 0));
+}
+
+function sessionsUnder(pathPrefix) {
+  if (pathPrefix === null) return ALL;
+  if (pathPrefix === "") return ALL.filter(s => shortPath(s.cwd).startsWith("~"));
+  return ALL.filter(s => {
+    const p = shortPath(s.cwd).slice(1); // drop "~"
+    return p === pathPrefix || p.startsWith(pathPrefix + "/");
+  });
+}
+
+let query = "";
+function showList() {
+  const main = $("#main");
+  history.replaceState(null, "", location.pathname);
+  let sessions = sessionsUnder(currentNode);
+  if (query) {
+    const q = query.toLowerCase();
+    sessions = sessions.filter(s =>
+      s.title.toLowerCase().includes(q) || s.subtext.toLowerCase().includes(q));
+  }
+  sessions = [...sessions].sort((a,b) => (b.lastTs||"").localeCompare(a.lastTs||""));
+
+  const whereName = currentNode === null ? "Every conversation"
+    : currentNode === "" ? "~" : "~" + currentNode;
+
+  let html = `
+    <div class="topbar">
+      <div class="where">${currentNode === null ? "Every <em>conversation</em>" : esc(whereName)}</div>
+      <div class="searchwrap"><input type="search" id="q" placeholder="Search titles &amp; first words…" value="${esc(query)}"></div>
+    </div>
+    <div class="list">`;
+
+  if (!sessions.length) {
+    html += `<div class="empty"><div class="big">Nothing here.</div>
+      ${query ? "Try fewer or different words — search covers titles and opening messages." : "No conversations recorded under this folder yet."}</div>`;
+  }
+
+  let lastMonth = "", i = 0;
+  for (const s of sessions) {
+    const mk2 = s.lastTs ? monthKey(s.lastTs) : "Undated";
+    if (mk2 !== lastMonth) { html += `<div class="month">${esc(mk2)}</div>`; lastMonth = mk2; }
+    const w = s.lastTs ? fmtDay(s.lastTs) : { day:"–", mon:"" };
+    const delay = Math.min(i * 0.022, 0.4); i++;
+    html += `
+      <div class="row" style="--d:${delay}s" data-dir="${esc(s.dir)}" data-id="${esc(s.id)}">
+        <div class="when"><div class="day">${w.day}</div><div class="mon">${w.mon}</div></div>
+        <div>
+          <h3>${esc(s.title)}</h3>
+          ${s.subtext ? `<div class="snippet">${esc(s.subtext)}</div>` : ""}
+          <div class="proj">${esc(shortPath(s.cwd))}</div>
+        </div>
+        <div class="meta">${s.prompts} prompt${s.prompts === 1 ? "" : "s"}</div>
+      </div>`;
+  }
+  html += `</div>`;
+  main.innerHTML = html;
+  main.scrollTop = 0;
+
+  $("#q").addEventListener("input", e => {
+    query = e.target.value;
+    const pos = e.target.selectionStart;
+    showList();
+    const q2 = $("#q"); q2.focus(); q2.setSelectionRange(pos, pos);
+  });
+  main.querySelectorAll(".row").forEach(r =>
+    r.onclick = () => showDetail(r.dataset.dir, r.dataset.id));
+}
+
+/* ---------- tiny markdown ---------- */
+function md(src) {
+  const out = [];
+  const lines = src.split("\n");
+  let i = 0, para = [];
+  const flush = () => { if (para.length) { out.push(`<p>${inline(para.join(" "))}</p>`); para = []; } };
+  const inline = t => esc(t)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|\W)\*([^*\n]+)\*(?=\W|$)/g, "$1<em>$2</em>")
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^\s*```/.test(l)) {
+      flush();
+      const buf = []; i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) buf.push(lines[i++]);
+      i++;
+      out.push(`<pre><code>${esc(buf.join("\n"))}</code></pre>`);
+      continue;
+    }
+    const h = /^(#{1,4})\s+(.*)/.exec(l);
+    if (h) { flush(); out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
+    if (/^\s*([-*+]|\d+\.)\s+/.test(l)) {
+      flush();
+      const ordered = /^\s*\d+\./.test(l);
+      const items = [];
+      while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i]))
+        items.push(`<li>${inline(lines[i++].replace(/^\s*([-*+]|\d+\.)\s+/, ""))}</li>`);
+      out.push(`<${ordered?"ol":"ul"}>${items.join("")}</${ordered?"ol":"ul"}>`);
+      continue;
+    }
+    if (/^\s*>/.test(l)) {
+      flush();
+      const buf = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ""));
+      out.push(`<blockquote>${inline(buf.join(" "))}</blockquote>`);
+      continue;
+    }
+    if (/^\s*[-*_]{3,}\s*$/.test(l)) { flush(); out.push("<hr>"); i++; continue; }
+    if (/^\s*\|.*\|\s*$/.test(l)) {
+      flush();
+      const rows = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(lines[i++]);
+      const cells = r => r.trim().replace(/^\||\|$/g, "").split("|").map(c => inline(c.trim()));
+      let body2 = "";
+      rows.forEach((r, idx) => {
+        if (/^[\s|:-]+$/.test(r)) return;
+        const tag = idx === 0 ? "th" : "td";
+        body2 += `<tr>${cells(r).map(c => `<${tag}>${c}</${tag}>`).join("")}</tr>`;
+      });
+      out.push(`<table>${body2}</table>`);
+      continue;
+    }
+    if (!l.trim()) { flush(); i++; continue; }
+    para.push(l.trim()); i++;
+  }
+  flush();
+  return out.join("\n");
+}
+
+/* ---------- detail ---------- */
+async function showDetail(dir, id) {
+  const main = $("#main");
+  history.replaceState(null, "", `#${dir}/${id}`);
+  const sess = ALL.find(s => s.dir === dir && s.id === id);
+  main.innerHTML = `<div class="loading">Opening “${esc(sess?.title || id)}”…</div>`;
+  const res = await fetch(`/api/session?dir=${encodeURIComponent(dir)}&id=${encodeURIComponent(id)}`);
+  const data = await res.json();
+
+  const range = sess?.firstTs ? (() => {
+    const a = fmtDay(sess.firstTs), b = fmtDay(sess.lastTs || sess.firstTs);
+    const same = a.day === b.day && a.mon === b.mon && a.year === b.year;
+    return same ? `${a.day} ${a.mon} ${a.year}` : `${a.day} ${a.mon} – ${b.day} ${b.mon} ${b.year}`;
+  })() : "";
+
+  let html = `<div class="detail">
+    <div class="backbar"><button id="back">← Back to the shelf</button></div>
+    <header class="convo">
+      <h2>${esc(sess?.title || "Conversation")}</h2>
+      <div class="convo-meta">
+        ${range ? `<span>${range}</span>` : ""}
+        <span>${esc(shortPath(sess?.cwd || ""))}</span>
+        ${data.model ? `<span>${esc(data.model)}</span>` : ""}
+        <span>${data.messages.length} entries</span>
+      </div>
+    </header>`;
+
+  // merge consecutive same-role messages
+  const merged = [];
+  for (const m of data.messages) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === m.role) last.blocks.push(...m.blocks);
+    else merged.push({ role: m.role, blocks: [...m.blocks] });
+  }
+
+  for (const m of merged) {
+    let body = "", chips = [];
+    const flushChips = () => {
+      if (chips.length) { body += `<div class="chips">${chips.join("")}</div>`; chips = []; }
+    };
+    for (const b of m.blocks) {
+      if (b.type === "text") {
+        flushChips();
+        body += m.role === "user" ? esc(b.text) : md(b.text);
+      } else if (b.type === "tool") {
+        chips.push(`<div class="chip"><b>${esc(b.name)}</b>${b.detail ? `<span>${esc(b.detail)}</span>` : ""}</div>`);
+      } else if (b.type === "command") {
+        chips.push(`<div class="chip cmd"><b>/${esc(b.text.replace(/^\//, ""))}</b></div>`);
+      } else if (b.type === "interrupt") {
+        chips.push(`<div class="chip intr">interrupted</div>`);
+      }
+    }
+    flushChips();
+    html += `<div class="msg ${m.role}">
+      <div class="who">${m.role === "user" ? "You" : "Claude"}</div>
+      <div class="body">${body}</div>
+    </div>`;
+  }
+  html += `</div>`;
+  main.innerHTML = html;
+  main.scrollTop = 0;
+  $("#back").onclick = showList;
+}
+
+/* ---------- almanac ---------- */
+const fmt = n => n >= 1e9 ? (n/1e9).toFixed(2).replace(/\.?0+$/,"") + "B"
+             : n >= 1e6 ? (n/1e6).toFixed(1).replace(/\.0$/,"") + "M"
+             : n >= 1e3 ? (n/1e3).toFixed(1).replace(/\.0$/,"") + "K" : String(n);
+
+async function showAlmanac() {
+  const main = $("#main");
+  history.replaceState(null, "", "#almanac");
+  main.innerHTML = `<div class="loading">Counting everything you ever said…<br>
+    <span style="font-size:.85rem">(first run reads the whole archive — give it a moment)</span></div>`;
+  const s = await (await fetch("/api/stats")).json();
+  const t = s.totals, ph = s.phrases, mn = s.manners, ck = s.clock, tb = s.toolbox;
+
+  const d1 = s.range.first ? fmtDay(s.range.first) : null;
+  const d2 = s.range.last ? fmtDay(s.range.last) : null;
+  const range = d1 ? `${d1.day} ${d1.mon} ${d1.year} — ${d2.day} ${d2.mon} ${d2.year}` : "";
+
+  const peakHour = ck.byHour.indexOf(Math.max(...ck.byHour));
+  const maxH = Math.max(...ck.byHour, 1);
+  const maxW = Math.max(...ck.byWeekday, 1);
+  const WD = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const ampm = h => h === 0 ? "midnight" : h < 12 ? h + " am" : h === 12 ? "noon" : (h-12) + " pm";
+
+  const politeness = mn.please + mn.thanks;
+  const mannerVerdict =
+    politeness === 0 ? "Not one please. Claude works for free AND gets no thanks." :
+    politeness < t.prompts * 0.05 ? "You say please about as often as a compiler does." :
+    politeness < t.prompts * 0.2 ? "Occasionally courteous. Claude notices." :
+    "Suspiciously polite for a person talking to software.";
+
+  const owlVerdict = ck.nightOwl > t.prompts * 0.15 ? "CERTIFIED NIGHT OWL"
+    : ck.nightOwl > 0 ? "OCCASIONAL INSOMNIAC" : "SLEEPS LIKE A CIVILIAN";
+
+  const bar = (rows, max) => rows.map(([n, v], i) =>
+    `<div class="brow"><div class="bn">${esc(String(n))}</div>
+     <div class="bt"><i style="width:${Math.max(2, v/max*100)}%; animation-delay:${.05*i}s"></i></div>
+     <div class="bv">${fmt(v)}</div></div>`).join("");
+
+  const r = s.records;
+  const durFmt = sec => sec >= 172800 ? `${Math.round(sec/86400)} days (incl. resumes)`
+    : sec >= 3600 ? `${(sec/3600).toFixed(1)} hours` : `${Math.round(sec/60)} minutes`;
+
+  main.innerHTML = `<div class="almanac">
+    <section class="masthead" style="--d:0s">
+      <div class="over">A statistical confession, compiled from the archive</div>
+      <h2>The Almanac</h2>
+      <div class="range">${range} · ${t.activeDays} active days · best streak ${ck.bestStreak} days</div>
+    </section>
+
+    <section style="--d:.08s">
+      <div class="sec-title">The raw ledger</div>
+      <div class="numwall">
+        <div class="bignum"><div class="n">${fmt(t.prompts)}</div><div class="l">prompts typed</div>
+          <div class="note">${fmt(t.promptWords)} words of pure intention</div></div>
+        <div class="bignum"><div class="n">${fmt(t.outTokens)}</div><div class="l">tokens Claude wrote back</div>
+          <div class="note">≈ ${Math.round(t.outTokens/130000)} novels' worth</div></div>
+        <div class="bignum"><div class="n">${fmt(t.toolCalls)}</div><div class="l">tool calls</div>
+          <div class="note">${fmt(t.toolCalls && Math.round(t.toolCalls/t.prompts))} per prompt — you delegate well</div></div>
+        <div class="bignum"><div class="n">${fmt(t.subagents)}</div><div class="l">sub-claudes spawned</div>
+          <div class="note">an army, frankly</div></div>
+        <div class="bignum"><div class="n">${fmt(t.cacheTokens)}</div><div class="l">cached tokens re-read</div>
+          <div class="note">Claude re-reading the chat so you don't have to</div></div>
+        <div class="bignum"><div class="n">${t.sessions}</div><div class="l">conversations</div>
+          <div class="note">${mn.interruptions} times you hit Esc mid-sentence</div></div>
+      </div>
+    </section>
+
+    <section style="--d:.16s">
+      <div class="sec-title">The confessional</div>
+      <div class="confession">
+        <div class="giant">
+          <div class="n">${ph.absolutely_right || 0}</div>
+          <div class="quote">“You're absolutely right.”</div>
+          <div class="l">times Claude folded instantly</div>
+        </div>
+        <div class="ledger">
+          <div class="li"><span>“Perfect!” — declared prematurely</span><b>${ph.perfect || 0}</b></div>
+          <div class="li"><span>Apologies issued by the machine</span><b>${ph.apologize || 0}</b></div>
+          <div class="li"><span>“Great question/idea/catch” — flattery</span><b>${ph.great_question || 0}</b></div>
+          <div class="li"><span>Tool calls that errored &amp; got quietly retried</span><b>${fmt(tb.errors)}</b></div>
+        </div>
+      </div>
+    </section>
+
+    <section style="--d:.22s">
+      <div class="sec-title">Manners &amp; menace</div>
+      <div class="confession">
+        <div class="ledger">
+          <div class="li"><span>“please”</span><b>${mn.please}</b></div>
+          <div class="li"><span>“thanks”</span><b>${mn.thanks}</b></div>
+          <div class="li"><span>swear words</span><b>${mn.swears}</b></div>
+          <div class="li"><span>ALL-CAPS rage prompts</span><b>${mn.capsRage}</b></div>
+        </div>
+        <div>
+          <div class="pullquote">${mannerVerdict}</div>
+          ${mn.swearTop.length ? `<div style="font-size:.8rem;color:var(--faint)">weapon of choice:
+            ${mn.swearTop.map(([w,n2]) => `<b>${esc(w)}</b> ×${n2}`).join(", ")}</div>` : ""}
+        </div>
+      </div>
+    </section>
+
+    <section style="--d:.28s">
+      <div class="sec-title">When you summon</div>
+      <div class="clockgrid">
+        <div>
+          <div class="hours">${ck.byHour.map((v,h) =>
+            `<div class="bar ${h===peakHour?"hot":""}" style="height:${Math.max(2, v/maxH*100)}%; animation-delay:${h*.02}s" title="${ampm(h)}: ${v}"></div>`).join("")}</div>
+          <div class="hourlabels">${ck.byHour.map((_,h) => `<span>${h%6===0?h:""}</span>`).join("")}</div>
+          <div class="weekrow">${ck.byWeekday.map((v,i) =>
+            `<div class="wd"><div class="pill"><i style="width:${v/maxW*100}%"></i></div>${WD[i]}</div>`).join("")}</div>
+        </div>
+        <div>
+          <div class="stamp">${owlVerdict}</div>
+          <div class="ledger" style="margin-top:1.4rem">
+            <div class="li"><span>peak hour</span><b>${ampm(peakHour)}</b></div>
+            <div class="li"><span>prompts after midnight</span><b>${ck.nightOwl}</b></div>
+            ${ck.busiestDay ? `<div class="li"><span>busiest day (${ck.busiestDay.date})</span><b>${ck.busiestDay.n}</b></div>` : ""}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section style="--d:.34s">
+      <div class="sec-title">The toolbox</div>
+      <div class="twocol">
+        <div>
+          <div class="bars">${bar(tb.tools, tb.tools[0]?.[1] || 1)}</div>
+        </div>
+        <div>
+          <div class="bars">${bar(tb.bashTop, tb.bashTop[0]?.[1] || 1)}</div>
+          <div class="ledger" style="margin-top:1.4rem">
+            <div class="li"><span>git commits made</span><b>${tb.gitCommits}</b></div>
+          </div>
+        </div>
+      </div>
+      ${tb.filesTop.length ? `<div style="margin-top:2.2rem">
+        <div style="font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);margin-bottom:.8rem">most rewritten files</div>
+        <div class="bars">${bar(tb.filesTop.map(([p,n2]) => [p.split("/").slice(-2).join("/"), n2]), tb.filesTop[0][1])}</div>
+      </div>` : ""}
+    </section>
+
+    <section style="--d:.4s">
+      <div class="sec-title">Your verbal tics</div>
+      <div class="ticwall">${s.tics.map(([w,n2],i) =>
+        `<span class="tic" style="font-size:${Math.max(1, 2.6 - i*.25)}rem">${esc(w)}<small>×${n2}</small></span>`).join("")}</div>
+      <div style="margin-top:2rem;font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);margin-bottom:.8rem">words you can't stop typing</div>
+      <div class="ticwall">${s.topWords.map(([w,n2],i) =>
+        `<span class="tic" style="font-size:${Math.max(.9, 2.2 - i*.12)}rem; border-color: var(--rule)">${esc(w)}<small>×${n2}</small></span>`).join("")}</div>
+    </section>
+
+    <section style="--d:.46s">
+      <div class="sec-title">Records &amp; honours</div>
+      <div class="ledger">
+        ${r.marathon ? `<div class="li"><span>marathon session — “${esc(r.marathon.title)}”</span><b>${durFmt(r.marathon.dur)}</b></div>` : ""}
+        ${r.chattiest ? `<div class="li"><span>chattiest session — “${esc(r.chattiest.title)}”</span><b>${r.chattiest.prompts} prompts</b></div>` : ""}
+        <div class="li"><span>longest prompt ever typed</span><b>${fmt(r.longestPrompt.chars)} chars</b></div>
+      </div>
+      <div class="pullquote">“${esc(r.longestPrompt.text.slice(0, 220))}…”</div>
+      ${s.models.length ? `<div style="margin-top:2rem"><div style="font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);margin-bottom:.8rem">who answered the call</div>
+        <div class="bars">${bar(s.models, s.models[0][1])}</div></div>` : ""}
+    </section>
+
+    <div class="footnote">Compiled without judgement (mostly) · refresh after new conversations to recount</div>
+  </div>`;
+  main.scrollTop = 0;
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && ($("#back") || location.hash === "#almanac")) showList();
+});
+
+/* ---------- boot ---------- */
+(async () => {
+  const res = await fetch("/api/index");
+  const data = await res.json();
+  HOME = data.home;
+  ALL = data.projects.flatMap(p => p.sessions.map(s => ({ ...s, dir: p.dir })));
+  const nProj = data.projects.length;
+  $("#stats").textContent = `${ALL.length} conversations · ${nProj} projects`;
+  buildTree();
+  // open the first level by default
+  openPaths.add("");
+  renderTree();
+  const h = location.hash.slice(1);
+  if (h === "almanac") {
+    showAlmanac();
+  } else if (h.includes("/")) {
+    const i = h.lastIndexOf("/");
+    showDetail(h.slice(0, i), h.slice(i + 1));
+  } else {
+    showList();
+  }
+})();
+</script>
+</body>
+</html>
