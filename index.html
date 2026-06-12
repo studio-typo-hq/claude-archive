@@ -176,6 +176,14 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
+  .row .rowcost {
+    margin-top: .35rem; font-family: var(--serif);
+    font-size: .95rem; color: var(--rust);
+  }
+  .topbar .sumcost {
+    font-family: var(--serif); font-size: 1.2rem; color: var(--rust);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
 
   .empty {
     margin: 5rem auto; max-width: 26rem; text-align: center;
@@ -413,6 +421,9 @@
 const $ = (s, el=document) => el.querySelector(s);
 const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 
+const usd = c => !c ? "$0" : c >= 100 ? "$" + Math.round(c).toLocaleString()
+  : c >= 0.01 ? "$" + c.toFixed(2) : "<$0.01";
+
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const fmtDay = ts => { const d = new Date(ts); return { day: d.getDate(), mon: MONTHS[d.getMonth()], year: d.getFullYear() }; };
 const monthKey = ts => { const d = new Date(ts); return `${d.toLocaleString("en",{month:"long"})} ${d.getFullYear()}`; };
@@ -507,10 +518,12 @@ function showList() {
 
   const whereName = currentNode === null ? "Every conversation"
     : currentNode === "" ? "~" : "~" + currentNode;
+  const sumCost = sessions.reduce((a, s) => a + (s.cost || 0), 0);
 
   let html = `
     <div class="topbar">
       <div class="where">${currentNode === null ? "Every <em>conversation</em>" : esc(whereName)}</div>
+      <div class="sumcost" title="API-equivalent cost of the listed conversations">${usd(sumCost)}</div>
       <div class="searchwrap"><input type="search" id="q" placeholder="Search titles &amp; first words…" value="${esc(query)}"></div>
     </div>
     <div class="list">`;
@@ -534,7 +547,7 @@ function showList() {
           ${s.subtext ? `<div class="snippet">${esc(s.subtext)}</div>` : ""}
           <div class="proj">${esc(shortPath(s.cwd))}</div>
         </div>
-        <div class="meta">${s.prompts} prompt${s.prompts === 1 ? "" : "s"}</div>
+        <div class="meta">${s.prompts} prompt${s.prompts === 1 ? "" : "s"}<div class="rowcost">${usd(s.cost)}</div></div>
       </div>`;
   }
   html += `</div>`;
@@ -636,6 +649,7 @@ async function showDetail(dir, id) {
         <span>${esc(shortPath(sess?.cwd || ""))}</span>
         ${data.model ? `<span>${esc(data.model)}</span>` : ""}
         <span>${data.messages.length} entries</span>
+        ${sess?.cost ? `<span style="color:var(--rust)">${usd(sess.cost)} api-equiv</span>` : ""}
       </div>
     </header>`;
 
@@ -709,10 +723,10 @@ async function showAlmanac() {
   const owlVerdict = ck.nightOwl > t.prompts * 0.15 ? "CERTIFIED NIGHT OWL"
     : ck.nightOwl > 0 ? "OCCASIONAL INSOMNIAC" : "SLEEPS LIKE A CIVILIAN";
 
-  const bar = (rows, max) => rows.map(([n, v], i) =>
+  const bar = (rows, max, vf = fmt) => rows.map(([n, v], i) =>
     `<div class="brow"><div class="bn">${esc(String(n))}</div>
      <div class="bt"><i style="width:${Math.max(2, v/max*100)}%; animation-delay:${.05*i}s"></i></div>
-     <div class="bv">${fmt(v)}</div></div>`).join("");
+     <div class="bv">${vf(v)}</div></div>`).join("");
 
   const r = s.records;
   const durFmt = sec => sec >= 172800 ? `${Math.round(sec/86400)} days (incl. resumes)`
@@ -740,6 +754,28 @@ async function showAlmanac() {
           <div class="note">Claude re-reading the chat so you don't have to</div></div>
         <div class="bignum"><div class="n">${t.sessions}</div><div class="l">conversations</div>
           <div class="note">${mn.interruptions} times you hit Esc mid-sentence</div></div>
+      </div>
+    </section>
+
+    <section style="--d:.12s">
+      <div class="sec-title">The invoice</div>
+      <div class="confession">
+        <div class="giant">
+          <div class="n">${usd(s.spend.total)}</div>
+          <div class="quote">what the raw API would have billed</div>
+          <div class="l">≈ ${usd(s.spend.total / Math.max(1, t.activeDays))} per active day</div>
+        </div>
+        <div>
+          <div class="bars">${bar(s.spend.byModel, s.spend.byModel[0]?.[1] || 1, usd)}</div>
+          <div style="margin-top:1.4rem;font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);margin-bottom:.6rem">most expensive conversations</div>
+          <div class="ledger">
+            ${s.spend.priciest.map(p => `<div class="li"><span>“${esc(p.title)}”</span><b>${usd(p.cost)}</b></div>`).join("")}
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:1.6rem;font-family:var(--body);font-style:italic;font-size:.85rem;color:var(--faint)">
+        API-equivalent pricing: Opus $5/$25, Fable $10/$50, Sonnet $3/$15, Haiku $1/$5 per million tokens (in/out);
+        cache reads at 0.1×, cache writes at 1.25× input. Includes sub-agent traffic. You pay a subscription — this is the counterfactual.
       </div>
     </section>
 

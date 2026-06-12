@@ -14,6 +14,44 @@ PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = 4747
 
+# USD per 1M tokens: (input, output). Cache read = 0.1x input, cache write = 1.25x input.
+PRICES = {
+    "fable": (10.0, 50.0),
+    "mythos": (10.0, 50.0),
+    "opus": (5.0, 25.0),
+    "sonnet": (3.0, 15.0),
+    "haiku": (1.0, 5.0),
+}
+
+
+def usage_cost(model, usage):
+    m = model or ""
+    in_p, out_p = next((p for k, p in PRICES.items() if k in m), PRICES["opus"])
+    return (
+        (usage.get("input_tokens", 0) or 0) * in_p
+        + (usage.get("output_tokens", 0) or 0) * out_p
+        + (usage.get("cache_read_input_tokens", 0) or 0) * in_p * 0.1
+        + (usage.get("cache_creation_input_tokens", 0) or 0) * in_p * 1.25
+    ) / 1_000_000
+
+
+def scan_usage_lines(path):
+    """Sum API-equivalent cost of all assistant messages in one jsonl file."""
+    cost = 0.0
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if '"type":"assistant"' not in line or '"usage"' not in line:
+                continue
+            try:
+                msg = json.loads(line).get("message", {})
+            except ValueError:
+                continue
+            usage = msg.get("usage")
+            if usage:
+                cost += usage_cost(msg.get("model", ""), usage)
+    return cost
+
+
 TS_RE = re.compile(r'"timestamp":"([^"]+)"')
 CWD_RE = re.compile(r'"cwd":"([^"]+)"')
 CMD_RE = re.compile(r"<command-name>(.*?)</command-name>", re.S)
@@ -52,9 +90,17 @@ def scan_session(path):
     last_ts = None
     prompts = 0
     user_lines = 0
+    cost = 0.0
 
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
+            if '"type":"assistant"' in line and '"usage"' in line:
+                try:
+                    msg = json.loads(line).get("message", {})
+                    if msg.get("usage"):
+                        cost += usage_cost(msg.get("model", ""), msg["usage"])
+                except ValueError:
+                    pass
             if '"timestamp"' in line:
                 m = TS_RE.search(line)
                 if m:
@@ -88,6 +134,17 @@ def scan_session(path):
                 if txt and not txt.startswith(NOISE_PREFIXES):
                     subtext = re.sub(r"\s+", " ", txt)[:280]
 
+    # subagent / workflow transcripts live in a companion dir named after the session
+    session_dir = path[:-len(".jsonl")]
+    if os.path.isdir(session_dir):
+        for root, _dirs, files in os.walk(session_dir):
+            for fn in files:
+                if fn.endswith(".jsonl"):
+                    try:
+                        cost += scan_usage_lines(os.path.join(root, fn))
+                    except OSError:
+                        pass
+
     meta = None
     if title or subtext:
         meta = {
@@ -98,6 +155,7 @@ def scan_session(path):
             "firstTs": first_ts,
             "lastTs": last_ts,
             "prompts": prompts or user_lines,
+            "cost": round(cost, 4),
         }
     _index_cache[path] = (key, meta)
     return meta
@@ -275,6 +333,7 @@ def build_stats():
     phrase_hits = Counter()
     models = Counter()
     in_tokens = out_tokens = cache_tokens = 0
+    cost_by_model = Counter()
 
     sessions = []
     first_ts_all = None
@@ -285,6 +344,7 @@ def build_stats():
         s_first = s_last = None
         s_prompts = 0
         s_msgs = 0
+        s_cost = 0.0
         try:
             fh = open(path, encoding="utf-8", errors="replace")
         except OSError:
@@ -371,6 +431,10 @@ def build_stats():
                     in_tokens += usage.get("input_tokens", 0) or 0
                     out_tokens += usage.get("output_tokens", 0) or 0
                     cache_tokens += usage.get("cache_read_input_tokens", 0) or 0
+                    if usage:
+                        c = usage_cost(msg.get("model", ""), usage)
+                        s_cost += c
+                        cost_by_model[msg.get("model") or "?"] += c
                     for b in msg.get("content") or []:
                         if not isinstance(b, dict):
                             continue
@@ -398,6 +462,18 @@ def build_stats():
                             for k, pat in PHRASES.items():
                                 phrase_hits[k] += len(pat.findall(t))
 
+        session_dir = path[:-len(".jsonl")]
+        if os.path.isdir(session_dir):
+            for root, _dirs, fns in os.walk(session_dir):
+                for fn in fns:
+                    if fn.endswith(".jsonl"):
+                        try:
+                            sub = scan_usage_lines(os.path.join(root, fn))
+                            s_cost += sub
+                            cost_by_model["(sub-agents)"] += sub
+                        except OSError:
+                            pass
+
         if s_msgs:
             dur = 0
             if s_first and s_last:
@@ -405,7 +481,8 @@ def build_stats():
                 if a and b2:
                     dur = (b2 - a).total_seconds()
             sessions.append({"title": title or "(untitled)", "proj": proj,
-                             "prompts": s_prompts, "msgs": s_msgs, "dur": dur})
+                             "prompts": s_prompts, "msgs": s_msgs, "dur": dur,
+                             "cost": s_cost})
             if s_first and (first_ts_all is None or s_first < first_ts_all):
                 first_ts_all = s_first
             if s_last and (last_ts_all is None or s_last > last_ts_all):
@@ -451,6 +528,14 @@ def build_stats():
                     "longestBash": longest_bash[:300], "errors": tool_errors,
                     "filesTop": [(p.replace(home, "~"), n) for p, n in edited_files.most_common(8)]},
         "models": models.most_common(6),
+        "spend": {
+            "total": round(sum(cost_by_model.values()), 2),
+            "byModel": [(m, round(c, 2)) for m, c in cost_by_model.most_common(8)
+                        if c >= 0.01 and "synthetic" not in m],
+            "priciest": sorted(
+                ({"title": s["title"], "cost": round(s["cost"], 2)} for s in sessions),
+                key=lambda x: x["cost"], reverse=True)[:3],
+        },
         "records": {
             "longestPrompt": longest_prompt,
             "marathon": max(sessions, key=lambda s: s["dur"], default=None),
