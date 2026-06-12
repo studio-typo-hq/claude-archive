@@ -184,6 +184,23 @@
     font-family: var(--serif); font-size: 1.2rem; color: var(--rust);
     font-variant-numeric: tabular-nums; white-space: nowrap;
   }
+  .sortsel {
+    font: inherit; font-size: .75rem; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-soft); background: none;
+    border: 0; border-bottom: 1px solid var(--rule);
+    padding: .3rem 0; cursor: pointer; outline: none;
+  }
+  .sortsel:focus { border-bottom-color: var(--rust); }
+
+  .daychart { display: grid; gap: 2px; align-items: end; height: 8.5rem; }
+  .daychart .bar {
+    background: var(--ink); opacity: .8; min-height: 2px; border-radius: 1px 1px 0 0;
+    transform-origin: bottom; animation: grow .8s cubic-bezier(.22,1,.36,1) backwards;
+  }
+  .daychart .bar.hot { background: var(--rust); opacity: 1; }
+  .daylabels { display: grid; gap: 2px; margin-top: .35rem;
+    font-size: .56rem; color: var(--faint); }
+  .daylabels span { white-space: nowrap; overflow: visible; }
 
   .empty {
     margin: 5rem auto; max-width: 26rem; text-align: center;
@@ -505,6 +522,7 @@ function sessionsUnder(pathPrefix) {
 }
 
 let query = "";
+let sortBy = "recent";
 function showList() {
   const main = $("#main");
   history.replaceState(null, "", location.pathname);
@@ -514,7 +532,12 @@ function showList() {
     sessions = sessions.filter(s =>
       s.title.toLowerCase().includes(q) || s.subtext.toLowerCase().includes(q));
   }
-  sessions = [...sessions].sort((a,b) => (b.lastTs||"").localeCompare(a.lastTs||""));
+  sessions = [...sessions];
+  if (sortBy === "cost") sessions.sort((a,b) => (b.cost||0) - (a.cost||0));
+  else if (sortBy === "prompts") sessions.sort((a,b) => (b.prompts||0) - (a.prompts||0));
+  else if (sortBy === "span") sessions.sort((a,b) =>
+    (new Date(b.lastTs||0) - new Date(b.firstTs||0)) - (new Date(a.lastTs||0) - new Date(a.firstTs||0)));
+  else sessions.sort((a,b) => (b.lastTs||"").localeCompare(a.lastTs||""));
 
   const whereName = currentNode === null ? "Every conversation"
     : currentNode === "" ? "~" : "~" + currentNode;
@@ -524,6 +547,12 @@ function showList() {
     <div class="topbar">
       <div class="where">${currentNode === null ? "Every <em>conversation</em>" : esc(whereName)}</div>
       <div class="sumcost" title="API-equivalent cost of the listed conversations">${usd(sumCost)}</div>
+      <select class="sortsel" id="sortsel" title="Sort conversations">
+        <option value="recent" ${sortBy==="recent"?"selected":""}>Latest first</option>
+        <option value="cost" ${sortBy==="cost"?"selected":""}>Costliest</option>
+        <option value="prompts" ${sortBy==="prompts"?"selected":""}>Most prompts</option>
+        <option value="span" ${sortBy==="span"?"selected":""}>Longest running</option>
+      </select>
       <div class="searchwrap"><input type="search" id="q" placeholder="Search titles &amp; first words…" value="${esc(query)}"></div>
     </div>
     <div class="list">`;
@@ -535,8 +564,10 @@ function showList() {
 
   let lastMonth = "", i = 0;
   for (const s of sessions) {
-    const mk2 = s.lastTs ? monthKey(s.lastTs) : "Undated";
-    if (mk2 !== lastMonth) { html += `<div class="month">${esc(mk2)}</div>`; lastMonth = mk2; }
+    if (sortBy === "recent") {
+      const mk2 = s.lastTs ? monthKey(s.lastTs) : "Undated";
+      if (mk2 !== lastMonth) { html += `<div class="month">${esc(mk2)}</div>`; lastMonth = mk2; }
+    }
     const w = s.lastTs ? fmtDay(s.lastTs) : { day:"–", mon:"" };
     const delay = Math.min(i * 0.022, 0.4); i++;
     html += `
@@ -554,6 +585,7 @@ function showList() {
   main.innerHTML = html;
   main.scrollTop = 0;
 
+  $("#sortsel").addEventListener("change", e => { sortBy = e.target.value; showList(); });
   $("#q").addEventListener("input", e => {
     query = e.target.value;
     const pos = e.target.selectionStart;
@@ -773,6 +805,31 @@ async function showAlmanac() {
           </div>
         </div>
       </div>
+      ${(() => {
+        const byDay = s.spend.byDay || [];
+        if (!byDay.length) return "";
+        const map = new Map(byDay);
+        const days = [];
+        for (let d = new Date(byDay[0][0]); d <= new Date(byDay[byDay.length-1][0]); d.setDate(d.getDate()+1)) {
+          const key = d.toISOString().slice(0,10);
+          days.push([key, map.get(key) || 0, d.getDate(), d.getMonth()]);
+        }
+        const maxD = Math.max(...days.map(d => d[1]), 0.01);
+        const hotIdx = days.findIndex(d => d[1] === maxD);
+        const cols = `grid-template-columns:repeat(${days.length},1fr)`;
+        return `<div style="margin-top:2.6rem">
+          <div style="font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);margin-bottom:.9rem">
+            spend per day · peak ${usd(maxD)} on ${days[hotIdx][2]} ${MONTHS[days[hotIdx][3]]}</div>
+          <div class="daychart" style="${cols}">${days.map(([key,v],i) =>
+            `<div class="bar ${i===hotIdx?"hot":""}" style="height:${Math.max(2, v/maxD*100)}%; animation-delay:${i*.012}s" title="${key}: ${usd(v)}"></div>`).join("")}</div>
+          <div class="daylabels" style="${cols}">${days.map(([,,dom,mon],i) =>
+            `<span>${(i===0 || dom===1 || dom===15) ? dom + " " + MONTHS[mon] : ""}</span>`).join("")}</div>
+        </div>`;
+      })()}
+      ${s.spend.byProject?.length ? `<div style="margin-top:2.4rem">
+        <div style="font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);margin-bottom:.8rem">spend by project</div>
+        <div class="bars">${bar(s.spend.byProject.map(([p,c]) => [p.replace("~/Desktop/","") || "~", c]), s.spend.byProject[0][1], usd)}</div>
+      </div>` : ""}
       <div style="margin-top:1.6rem;font-family:var(--body);font-style:italic;font-size:.85rem;color:var(--faint)">
         API-equivalent pricing: Opus $5/$25, Fable $10/$50, Sonnet $3/$15, Haiku $1/$5 per million tokens (in/out);
         cache reads at 0.1×, cache writes at 1.25× input. Includes sub-agent traffic. You pay a subscription — this is the counterfactual.

@@ -35,20 +35,30 @@ def usage_cost(model, usage):
     ) / 1_000_000
 
 
-def scan_usage_lines(path):
-    """Sum API-equivalent cost of all assistant messages in one jsonl file."""
+def scan_usage_lines(path, by_date=None):
+    """Sum API-equivalent cost of all assistant messages in one jsonl file.
+
+    If by_date (a Counter) is given, also bucket cost by local calendar date.
+    """
     cost = 0.0
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             if '"type":"assistant"' not in line or '"usage"' not in line:
                 continue
             try:
-                msg = json.loads(line).get("message", {})
+                obj = json.loads(line)
             except ValueError:
                 continue
+            msg = obj.get("message", {})
             usage = msg.get("usage")
-            if usage:
-                cost += usage_cost(msg.get("model", ""), usage)
+            if not usage:
+                continue
+            c = usage_cost(msg.get("model", ""), usage)
+            cost += c
+            if by_date is not None and obj.get("timestamp"):
+                dt = _local_dt(obj["timestamp"])
+                if dt:
+                    by_date[dt.strftime("%Y-%m-%d")] += c
     return cost
 
 
@@ -334,23 +344,31 @@ def build_stats():
     models = Counter()
     in_tokens = out_tokens = cache_tokens = 0
     cost_by_model = Counter()
+    cost_by_date = Counter()
+    cost_by_project = Counter()
 
     sessions = []
     first_ts_all = None
     last_ts_all = None
 
+    home = os.path.expanduser("~")
     for proj, path in files:
         title = None
         s_first = s_last = None
         s_prompts = 0
         s_msgs = 0
         s_cost = 0.0
+        s_cwd = None
         try:
             fh = open(path, encoding="utf-8", errors="replace")
         except OSError:
             continue
         with fh:
             for line in fh:
+                if s_cwd is None and '"cwd"' in line:
+                    m = CWD_RE.search(line)
+                    if m:
+                        s_cwd = m.group(1)
                 if '"aiTitle"' in line:
                     try:
                         title = json.loads(line).get("aiTitle") or title
@@ -435,6 +453,10 @@ def build_stats():
                         c = usage_cost(msg.get("model", ""), usage)
                         s_cost += c
                         cost_by_model[msg.get("model") or "?"] += c
+                        if ts:
+                            dt = _local_dt(ts)
+                            if dt:
+                                cost_by_date[dt.strftime("%Y-%m-%d")] += c
                     for b in msg.get("content") or []:
                         if not isinstance(b, dict):
                             continue
@@ -468,7 +490,7 @@ def build_stats():
                 for fn in fns:
                     if fn.endswith(".jsonl"):
                         try:
-                            sub = scan_usage_lines(os.path.join(root, fn))
+                            sub = scan_usage_lines(os.path.join(root, fn), cost_by_date)
                             s_cost += sub
                             cost_by_model["(sub-agents)"] += sub
                         except OSError:
@@ -483,6 +505,8 @@ def build_stats():
             sessions.append({"title": title or "(untitled)", "proj": proj,
                              "prompts": s_prompts, "msgs": s_msgs, "dur": dur,
                              "cost": s_cost})
+            short = (s_cwd or "(unknown)").replace(home, "~")
+            cost_by_project[short] += s_cost
             if s_first and (first_ts_all is None or s_first < first_ts_all):
                 first_ts_all = s_first
             if s_last and (last_ts_all is None or s_last > last_ts_all):
@@ -532,6 +556,9 @@ def build_stats():
             "total": round(sum(cost_by_model.values()), 2),
             "byModel": [(m, round(c, 2)) for m, c in cost_by_model.most_common(8)
                         if c >= 0.01 and "synthetic" not in m],
+            "byDay": sorted((d, round(c, 2)) for d, c in cost_by_date.items()),
+            "byProject": [(p, round(c, 2)) for p, c in cost_by_project.most_common(10)
+                          if c >= 0.01],
             "priciest": sorted(
                 ({"title": s["title"], "cost": round(s["cost"], 2)} for s in sessions),
                 key=lambda x: x["cost"], reverse=True)[:3],
