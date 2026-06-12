@@ -33,7 +33,7 @@ No dependencies. No `pip install`. Two files.
 ## Run it
 
 ```bash
-git clone https://github.com/rajbeer1/claude-archive.git
+git clone https://github.com/studio-typo-hq/claude-archive.git
 cd claude-archive
 python3 server.py
 ```
